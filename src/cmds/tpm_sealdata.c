@@ -33,6 +33,9 @@ static void help(const char *aCmd)
 	logCmdOption("-o, --outfile FILE",
 		     _
 		     ("Filename to write sealed key to.  Default is STDOUT."));
+	logCmdOption("-r, --raw",
+		     _
+		     ("Use the SRK to seal the input data and write it out as a raw TPM_STORED_DATA blob"));
 	logCmdOption("-p, --pcr NUMBER",
 		     _
 		     ("PCR to seal data to.  Default is none.  This option can be specified multiple times to choose more than one PCR."));
@@ -48,6 +51,7 @@ static UINT32 selectedPcrs[24];
 static UINT32 selectedPcrsLen = 0;
 static BOOL passUnicode = FALSE;
 static BOOL isWellKnown = FALSE;
+static BOOL raw = FALSE;
 TSS_HCONTEXT hContext = 0;
 
 static int parse(const int aOpt, const char *aArg)
@@ -81,6 +85,10 @@ static int parse(const int aOpt, const char *aArg)
 		isWellKnown = TRUE;
 		rc = 0;
 		break;
+	case 'r':
+		raw = TRUE;
+		rc = 0;
+		break;
 	default:
 		break;
 	}
@@ -98,6 +106,7 @@ int main(int argc, char **argv)
 	struct option opts[] =
 	    { {"infile", required_argument, NULL, 'i'},
 	{"outfile", required_argument, NULL, 'o'},
+	{"raw", no_argument, NULL, 'r'},
 	{"pcr", required_argument, NULL, 'p'},
 	{"unicode", no_argument, NULL, 'u'},
 	{"well-known", no_argument, NULL, 'z'}
@@ -123,7 +132,7 @@ int main(int argc, char **argv)
 
 	initIntlSys();
 
-	if (genericOptHandler(argc, argv, "i:o:p:uz", opts,
+	if (genericOptHandler(argc, argv, "i:o:rp:uz", opts,
 			      sizeof(opts) / sizeof(struct option), parse,
 			      help) != 0)
 		goto out;
@@ -196,11 +205,13 @@ int main(int argc, char **argv)
 #endif
 	}
 
-	/* Retrieve random data to be used as the symmetric key
-	   (this key will encrypt the input file contents) */
-	if (tpmGetRandom(hTpm, EVP_CIPHER_key_length(EVP_aes_256_cbc()),
-			 &randKey) != TSS_SUCCESS)
-		goto out_close;
+	if (!raw) {
+		/* Retrieve random data to be used as the symmetric key
+		   (this key will encrypt the input file contents) */
+		if (tpmGetRandom(hTpm, EVP_CIPHER_key_length(EVP_aes_256_cbc()),
+					&randKey) != TSS_SUCCESS)
+			goto out_close;
+	}
 
 	/* Load the SRK and set the SRK policy (no password) */
 	if (keyLoadKeyByUUID(hContext, TSS_PS_TYPE_SYSTEM, SRK_UUID, &hSrk)
@@ -231,32 +242,34 @@ int main(int argc, char **argv)
 		shredPasswd(passwd);
 	passwd = NULL;
 
-	/* Build an RSA key object that will be created by the TPM
-	   (this will encrypt and protect the symmetric key) */
-	if (contextCreateObject
-	    (hContext, TSS_OBJECT_TYPE_RSAKEY, keyFlags,
-	     &hKey) != TSS_SUCCESS)
-		goto out_close;
+	if (!raw) {
+		/* Build an RSA key object that will be created by the TPM
+		   (this will encrypt and protect the symmetric key) */
+		if (contextCreateObject
+				(hContext, TSS_OBJECT_TYPE_RSAKEY, keyFlags,
+				 &hKey) != TSS_SUCCESS)
+			goto out_close;
 
-	if (contextCreateObject
-	    (hContext, TSS_OBJECT_TYPE_POLICY, TSS_POLICY_USAGE,
-	     &hPolicy) != TSS_SUCCESS)
-		goto out_close;
+		if (contextCreateObject
+				(hContext, TSS_OBJECT_TYPE_POLICY, TSS_POLICY_USAGE,
+				 &hPolicy) != TSS_SUCCESS)
+			goto out_close;
 
-	if (policySetSecret(hPolicy, strlen(TPMSEAL_SECRET), (BYTE *)TPMSEAL_SECRET)
-	    != TSS_SUCCESS)
-		goto out_close;
+		if (policySetSecret(hPolicy, strlen(TPMSEAL_SECRET), (BYTE *)TPMSEAL_SECRET)
+				!= TSS_SUCCESS)
+			goto out_close;
 
-	if (policyAssign(hPolicy, hKey) != TSS_SUCCESS)
-		goto out_close;
+		if (policyAssign(hPolicy, hKey) != TSS_SUCCESS)
+			goto out_close;
 
-	/* Create the RSA key (under the SRK) */
-	if (keyCreateKey(hKey, hSrk, NULL_HPCRS) != TSS_SUCCESS)
-		goto out_close;
+		/* Create the RSA key (under the SRK) */
+		if (keyCreateKey(hKey, hSrk, NULL_HPCRS) != TSS_SUCCESS)
+			goto out_close;
 
-	/* Load the newly created RSA key */
-	if (keyLoadKey(hKey, hSrk) != TSS_SUCCESS)
-		goto out_close;
+		/* Load the newly created RSA key */
+		if (keyLoadKey(hKey, hSrk) != TSS_SUCCESS)
+			goto out_close;
+	}
 
 	/* Build an encrypted data object that will hold the encrypted
 	   version of the symmetric key */
@@ -278,25 +291,38 @@ int main(int argc, char **argv)
 		goto out_close;
 
 	/* Encrypt and seal the symmetric key */
-	if (dataSeal
-	    (hEncdata, hKey, EVP_CIPHER_key_length(EVP_aes_256_cbc()),
-	     randKey, hPcrs) != TSS_SUCCESS)
-		goto out_close;
+	if (raw) {
+		unsigned totalLen = 0;
+		while ((lineLen = BIO_read(bin, line, sizeof(line))) > 0) {
+			totalLen += lineLen;
+		}
+
+		if (dataSeal
+			(hEncdata, hSrk, totalLen, line, hPcrs) != TSS_SUCCESS)
+			goto out_close;
+	} else {
+		if (dataSeal
+			(hEncdata, hKey, EVP_CIPHER_key_length(EVP_aes_256_cbc()),
+			 randKey, hPcrs) != TSS_SUCCESS)
+			goto out_close;
+	}
 
 	if (getAttribData(hEncdata, TSS_TSPATTRIB_ENCDATA_BLOB,
 			  TSS_TSPATTRIB_ENCDATABLOB_BLOB, &encLen,
 			  &encKey) != TSS_SUCCESS)
 		goto out_close;
 
-	if (getAttribData
-	    (hKey, TSS_TSPATTRIB_KEY_BLOB, TSS_TSPATTRIB_KEYBLOB_BLOB,
-	     &sealKeyLen, &sealKey) != TSS_SUCCESS)
-		goto out_close;
+	if (!raw) {
+		if (getAttribData
+		    (hKey, TSS_TSPATTRIB_KEY_BLOB, TSS_TSPATTRIB_KEYBLOB_BLOB,
+		     &sealKeyLen, &sealKey) != TSS_SUCCESS)
+			goto out_close;
 
-	/* Create a BIO to perform base64 encoding */
-	if ((b64 = BIO_new(BIO_f_base64())) == NULL) {
-		logError(_("Unable to open base64 BIO\n"));
-		goto out_close;
+		/* Create a BIO to perform base64 encoding */
+		if ((b64 = BIO_new(BIO_f_base64())) == NULL) {
+			logError(_("Unable to open base64 BIO\n"));
+			goto out_close;
+		}
 	}
 
 	/* Create a BIO for the output file */
@@ -311,6 +337,18 @@ int main(int argc, char **argv)
 	else if (BIO_write_filename(bdata, out_filename) <= 0) {
 		logError(_("Unable to open output file: %s\n"),
 			 out_filename);
+		goto out_close;
+	}
+
+	if (raw) {
+		BIO_write(bdata, encKey, encLen);
+		if (BIO_flush(bdata) != 1) {
+			logError(_("Unable to flush output\n"));
+			goto out_close;
+		}
+
+		iRc = 0;
+		logSuccess(argv[0]);
 		goto out_close;
 	}
 
