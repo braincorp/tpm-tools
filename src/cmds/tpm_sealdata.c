@@ -283,7 +283,7 @@ int main(int argc, char **argv)
 	     &hPolicy) != TSS_SUCCESS)
 		goto out_close;
 
-	if (policySetSecret(hPolicy, strlen(wellKnown), (BYTE *)wellKnown)
+	if (policySetSecret(hPolicy, sizeof(wellKnown), (BYTE *)wellKnown)
 	    != TSS_SUCCESS)
 		goto out_close;
 
