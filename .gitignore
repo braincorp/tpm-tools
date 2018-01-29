@@ -13,6 +13,7 @@ config.h.in
 config.rpath
 config.sub
 configure
+compile
 cscope.out
 depcomp
 install-sh
