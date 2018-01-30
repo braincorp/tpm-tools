@@ -14,7 +14,8 @@ ExternalProject_Add(
 
 add_custom_target(
   tpm-tools.clean
-  COMMAND rm -rf ${CMAKE_CURRENT_BINARY_DIR} || $(MAKE) -C ${CMAKE_CURRENT_SOURCE_DIR} distclean
+  COMMAND $(MAKE) -C ${CMAKE_CURRENT_SOURCE_DIR} distclean || true
+  COMMAND rm -rf ${CMAKE_CURRENT_BINARY_DIR} || true
 )
 
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tpm-tools/ DESTINATION / USE_SOURCE_PERMISSIONS COMPONENT boot)
