@@ -1,0 +1,4 @@
+01-opencryptoki-soname.patch
+02-cflags-errors-unused.patch
+03-fix-bool-error-parseStringWithValues.patch
+04-fix-FTBFS-clang.patch

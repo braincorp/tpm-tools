@@ -69,7 +69,7 @@ genericOptHandler( int a_iNumArgs, char **a_pszArgs,
 	if ( a_pszShortOpts )
 		strcat( szShortOpts, a_pszShortOpts );
 
-	__memset( sLongOpts, 0, sizeof( sLongOpts ) );
+	memset( sLongOpts, 0, sizeof( sLongOpts ) );
 	memcpy( sLongOpts, sGenLongOpts, sizeof( sGenLongOpts ) );
 	if ( a_sLongOpts ) {
 		memcpy( sLongOpts + iNumGenLongOpts,
@@ -134,12 +134,6 @@ genericOptHandler( int a_iNumArgs, char **a_pszArgs,
 	return 0;
 }
 
-void * __no_optimize
-__memset(void *s, int c, size_t n)
-{
-	return memset(s, c, n);
-}
-
 /*
  * This function should be called when you are done with a password
  * the above getPasswd function to properly clean up.
@@ -147,7 +141,7 @@ __memset(void *s, int c, size_t n)
 void shredPasswd( char *a_pszPasswd ) {
 
 	if ( a_pszPasswd ) {
-		__memset( a_pszPasswd, 0, strlen( a_pszPasswd ) );
+		memset( a_pszPasswd, 0, strlen( a_pszPasswd ) );
 		free( a_pszPasswd );
 	}
 }
@@ -219,7 +213,7 @@ out:
 
 	// pszPasswd is a static buffer, just clear it
 	if ( pszPasswd )
-		__memset( pszPasswd, 0, strlen( pszPasswd ) );
+		memset( pszPasswd, 0, strlen( pszPasswd ) );
 
 	return pszRetPasswd;
 }

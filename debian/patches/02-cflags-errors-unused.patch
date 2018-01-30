@@ -1,0 +1,13 @@
+Index: tpm-tools/configure.in
+===================================================================
+--- tpm-tools.orig/configure.in	2011-11-19 14:56:14.244446014 +0000
++++ tpm-tools/configure.in	2011-11-22 13:10:42.000860538 +0000
+@@ -138,7 +138,7 @@
+ AC_TYPE_SIGNAL
+ AC_TYPE_UID_T
+ 
+-CFLAGS="$CFLAGS -Wall -Werror -Wreturn-type -Wsign-compare"
++CFLAGS="$CFLAGS -Wall -Werror -Wno-unused -Wno-implicit-function-declaration -Wreturn-type -Wsign-compare"
+ 
+ AC_CONFIG_FILES(./Makefile		\
+ 		po/Makefile.in		\
